@@ -1,8 +1,8 @@
 use clap::Parser;
 use walkdir::WalkDir;
-use exif::{Reader, Tag};
-use std::fs::{self, File};
-use std::io::BufReader;
+use rexif::parse_buffer;
+use rexif::ExifTag;
+use std::fs;
 use std::path::{Path, PathBuf};
 use indicatif::{ProgressBar, ProgressStyle};
 
@@ -19,13 +19,12 @@ struct Args {
 }
 
 fn get_date_taken(path: &Path) -> Option<String> {
-    let file = File::open(path).ok()?;
-    let reader = BufReader::new(file);
-    let exif = Reader::new().read_from_container(reader).ok()?;
+    let file_bytes = std::fs::read(path).ok()?;
+    let exif = parse_buffer(&file_bytes).ok()?;
 
-    for field in exif.fields() {
-        if field.tag == Tag::DateTimeOriginal {
-            return Some(field.display_value().to_string());
+    for entry in exif.entries {
+        if entry.tag == ExifTag::DateTimeOriginal {
+            return Some(entry.value.to_string());
         }
     }
     None
