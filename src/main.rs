@@ -18,16 +18,16 @@ struct Args {
     out_dir: PathBuf,
 }
 
-fn get_date_taken(path: &Path) -> Option<String> {
-    let file_bytes = std::fs::read(path).ok()?;
-    let exif = parse_buffer(&file_bytes).ok()?;
+fn get_date_taken(path: &Path) -> Result<String, Box<dyn std::error::Error>> {
+    let file_bytes = std::fs::read(path)?;
+    let exif = parse_buffer(&file_bytes)?;
 
     for entry in exif.entries {
         if entry.tag == ExifTag::DateTimeOriginal {
-            return Some(entry.value.to_string());
+            return Ok(entry.value.to_string());
         }
     }
-    None
+    Err("無法找到拍攝日期".into())
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -55,25 +55,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for f in files {
         pb.inc(1);
         let date_str = match get_date_taken(&f) {
-            Some(d) => d,
-            None => {
-                pb.set_message(format!("跳過 {:?}：無法獲取拍攝日期", f));
+            Ok(d) => d,
+            Err(e) => {
+                pb.set_message(format!("跳過 {:?}：無法獲取拍攝日期 - {}", f, e));
                 continue;
             }
         };
 
-        let out_name = date_str.replace(':', "-").replace(' ', "_") + ".jpg";
-        let out_path = args.out_dir.join(&out_name);
+        let base_name = date_str.replace(':', "-").replace(' ', "_");
+        let mut out_name = format!("{}.jpg", base_name);
+        let mut counter = 0;
 
-        if out_path.is_file() {
-            pb.set_message(format!("跳過 {:?}：輸出檔案已存在", f));
-            continue;
-        }
-
-        match fs::rename(&f, &out_path) {
-            Ok(_) => pb.set_message(format!("已重新命名 {:?} 為 {:?}", f.file_name().unwrap_or_default(), out_path.file_name().unwrap_or_default
-())),
-            Err(e) => pb.set_message(format!("重新命名 {:?} 失敗：{}", f, e)),
+        loop {
+            let out_path = args.out_dir.join(&out_name);
+            if !out_path.is_file() {
+                match fs::rename(&f, &out_path) {
+                    Ok(_) => pb.set_message(format!("已重新命名 {:?} 為 {:?}", f.file_name().unwrap_or_default(), out_path.file_name().unwrap_or_default())),
+                    Err(e) => pb.set_message(format!("重新命名 {:?} 失敗：{}", f, e)),
+                }
+                break;
+            }
+            counter += 1;
+            out_name = format!("{}_{}.jpg", base_name, counter);
         }
     }
 
