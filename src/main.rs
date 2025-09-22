@@ -47,7 +47,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let walker = WalkDir::new(&args.in_dir)
         .into_iter()
         .filter_map(|e| e.ok())
-        .filter(|entry| entry.file_type().is_file() && entry.path().extension().map_or(false, |ext| ext.eq_ignore_ascii_case("jpg")));
+        .filter(|entry| entry.file_type().is_file() && entry.path().extension().map_or(false, |ext| {
+            ext.eq_ignore_ascii_case("jpg") || ext.eq_ignore_ascii_case("jpeg")
+        }));
 
     let pb = ProgressBar::new_spinner();
     pb.set_style(ProgressStyle::default_spinner()
