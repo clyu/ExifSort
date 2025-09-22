@@ -3,6 +3,7 @@ use walkdir::WalkDir;
 use rexif::parse_buffer;
 use rexif::ExifTag;
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use indicatif::{ProgressBar, ProgressStyle};
 
@@ -19,8 +20,11 @@ struct Args {
 }
 
 fn get_date_taken(path: &Path) -> Result<String, Box<dyn std::error::Error>> {
-    let file_bytes = std::fs::read(path)?;
-    let exif = parse_buffer(&file_bytes)?;
+    let mut file = fs::File::open(path)?;
+    // Read only the first 64KB, which is usually enough for EXIF data.
+    let mut buffer = vec![0; 64 * 1024];
+    let n = file.read(&mut buffer)?;
+    let exif = parse_buffer(&buffer[..n])?;
 
     for entry in exif.entries {
         if entry.tag == ExifTag::DateTimeOriginal {
