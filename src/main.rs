@@ -40,21 +40,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     fs::create_dir_all(&args.out_dir)?;
 
-    let files: Vec<PathBuf> = WalkDir::new(&args.in_dir)
+    let walker = WalkDir::new(&args.in_dir)
         .into_iter()
         .filter_map(|e| e.ok())
-        .filter(|entry| entry.file_type().is_file() && entry.path().extension().map_or(false, |ext| ext.eq_ignore_ascii_case("jpg")))
-        .map(|entry| entry.path().to_path_buf())
-        .collect();
+        .filter(|entry| entry.file_type().is_file() && entry.path().extension().map_or(false, |ext| ext.eq_ignore_ascii_case("jpg")));
 
-    let pb = ProgressBar::new(files.len() as u64);
-    pb.set_style(ProgressStyle::default_bar()
-        .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) {msg}")?
-        .progress_chars("#>-"));
+    let pb = ProgressBar::new_spinner();
+    pb.set_style(ProgressStyle::default_spinner()
+        .template("{spinner:.green} [{elapsed_precise}] {pos} files processed {msg}")?
+    );
 
-    for f in files {
+    for entry in walker {
+        let f = entry.path();
         pb.inc(1);
-        let date_str = match get_date_taken(&f) {
+        let date_str = match get_date_taken(f) {
             Ok(d) => d,
             Err(e) => {
                 pb.set_message(format!("跳過 {:?}：無法獲取拍攝日期 - {}", f, e));
@@ -69,7 +68,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         loop {
             let out_path = args.out_dir.join(&out_name);
             if !out_path.is_file() {
-                match fs::rename(&f, &out_path) {
+                match fs::rename(f, &out_path) {
                     Ok(_) => pb.set_message(format!("已重新命名 {:?} 為 {:?}", f.file_name().unwrap_or_default(), out_path.file_name().unwrap_or_default())),
                     Err(e) => pb.set_message(format!("重新命名 {:?} 失敗：{}", f, e)),
                 }
