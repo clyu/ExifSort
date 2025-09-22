@@ -80,7 +80,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let out_path = args.out_dir.join(&out_name);
             if !out_path.is_file() {
                 match fs::rename(f, &out_path) {
-                    Ok(_) => pb.set_message(format!("Renamed {:?} to {:?}", f.file_name().unwrap_or_default(), out_path.file_name().unwrap_or_default())),
+                    Ok(_) => {},
                     Err(e) => pb.set_message(format!("Failed to rename {:?}: {}", f, e)),
                 }
                 break;
