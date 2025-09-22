@@ -39,7 +39,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if !args.in_dir.is_dir() {
         eprintln!("Error: Input directory does not exist or is not a directory: {:?}", args.in_dir);
-        return Ok(());
+        return Err("Input directory error".into());
     }
 
     fs::create_dir_all(&args.out_dir)?;
