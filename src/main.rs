@@ -10,11 +10,11 @@ use indicatif::{ProgressBar, ProgressStyle};
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
-    /// 輸入目錄
+    /// Input directory
     #[arg(short, long)]
     in_dir: PathBuf,
 
-    /// 輸出目錄
+    /// Output directory
     #[arg(short, long)]
     out_dir: PathBuf,
 }
@@ -31,14 +31,14 @@ fn get_date_taken(path: &Path) -> Result<String, Box<dyn std::error::Error>> {
             return Ok(entry.value.to_string());
         }
     }
-    Err("無法找到拍攝日期".into())
+    Err("Could not find date taken".into())
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
     if !args.in_dir.is_dir() {
-        eprintln!("錯誤：輸入目錄不存在或不是一個目錄：{:?}", args.in_dir);
+        eprintln!("Error: Input directory does not exist or is not a directory: {:?}", args.in_dir);
         return Ok(());
     }
 
@@ -62,7 +62,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let date_str = match get_date_taken(f) {
             Ok(d) => d,
             Err(e) => {
-                pb.set_message(format!("跳過 {:?}：無法獲取拍攝日期 - {}", f, e));
+                pb.set_message(format!("Skipping {:?}: Could not get date taken - {}", f, e));
                 continue;
             }
         };
@@ -75,8 +75,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let out_path = args.out_dir.join(&out_name);
             if !out_path.is_file() {
                 match fs::rename(f, &out_path) {
-                    Ok(_) => pb.set_message(format!("已重新命名 {:?} 為 {:?}", f.file_name().unwrap_or_default(), out_path.file_name().unwrap_or_default())),
-                    Err(e) => pb.set_message(format!("重新命名 {:?} 失敗：{}", f, e)),
+                    Ok(_) => pb.set_message(format!("Renamed {:?} to {:?}", f.file_name().unwrap_or_default(), out_path.file_name().unwrap_or_default())),
+                    Err(e) => pb.set_message(format!("Failed to rename {:?}: {}", f, e)),
                 }
                 break;
             }
@@ -85,7 +85,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    pb.finish_with_message("完成！");
+    pb.finish_with_message("Done!");
 
     Ok(())
 }
