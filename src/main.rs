@@ -42,6 +42,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Err("Input directory error".into());
     }
 
+    if args.out_dir.starts_with(&args.in_dir) {
+        eprintln!("Error: Output directory cannot be a subdirectory of the input directory.");
+        return Err("Output directory error".into());
+    }
+
     fs::create_dir_all(&args.out_dir)?;
 
     let walker = WalkDir::new(&args.in_dir)
