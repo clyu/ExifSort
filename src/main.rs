@@ -61,13 +61,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .template("{spinner:.green} [{elapsed_precise}] {pos} files processed {msg}")?
     );
 
+    let mut failed_files: Vec<String> = Vec::new();
+
     for entry in walker {
         let f = entry.path();
         pb.inc(1);
         let date_str = match get_date_taken(f) {
             Ok(d) => d,
             Err(e) => {
-                pb.set_message(format!("Skipping {:?}: Could not get date taken - {}", f, e));
+                failed_files.push(format!("Skipping {:?}: Could not get date taken - {}", f, e));
                 continue;
             }
         };
@@ -81,7 +83,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if !out_path.is_file() {
                 match fs::rename(f, &out_path) {
                     Ok(_) => {},
-                    Err(e) => pb.set_message(format!("Failed to rename {:?}: {}", f, e)),
+                    Err(e) => failed_files.push(format!("Failed to rename {:?}: {}", f, e)),
                 }
                 break;
             }
@@ -91,6 +93,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     pb.finish_with_message("Done!");
+
+    if !failed_files.is_empty() {
+        eprintln!("\n--- Summary of Errors ---");
+        for error in failed_files {
+            eprintln!("{}", error);
+        }
+    }
 
     Ok(())
 }
