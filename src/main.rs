@@ -17,14 +17,24 @@ struct Args {
     /// Output directory
     #[arg(short, long)]
     out_dir: PathBuf,
+
+    /// Read the entire file to find EXIF data. Slower but more reliable.
+    #[arg(short, long, default_value_t = false)]
+    full_scan: bool,
 }
 
-fn get_date_taken(path: &Path) -> Result<String, Box<dyn std::error::Error>> {
+fn get_date_taken(path: &Path, full_scan: bool) -> Result<String, Box<dyn std::error::Error>> {
     let mut file = fs::File::open(path)?;
-    // Read only the first 64KB, which is usually enough for EXIF data.
-    let mut buffer = vec![0; 64 * 1024];
-    let n = file.read(&mut buffer)?;
-    let exif = parse_buffer(&buffer[..n])?;
+    let exif = if full_scan {
+        let mut buffer = Vec::new();
+        file.read_to_end(&mut buffer)?;
+        parse_buffer(&buffer)?
+    } else {
+        // Read only the first 64KB, which is usually enough for EXIF data.
+        let mut buffer = vec![0; 64 * 1024];
+        let n = file.read(&mut buffer)?;
+        parse_buffer(&buffer[..n])?
+    };
 
     for entry in exif.entries {
         if entry.tag == ExifTag::DateTimeOriginal {
@@ -66,7 +76,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for entry in walker {
         let f = entry.path();
         pb.inc(1);
-        let date_str = match get_date_taken(f) {
+        let date_str = match get_date_taken(f, args.full_scan) {
             Ok(d) => d,
             Err(e) => {
                 failed_files.push(format!("Skipping {:?}: Could not get date taken - {}", f, e));
