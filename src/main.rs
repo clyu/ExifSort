@@ -90,7 +90,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         loop {
             let out_path = args.out_dir.join(&out_name);
-            if !out_path.is_file() {
+            if !out_path.exists() {
                 match fs::rename(f, &out_path) {
                     Ok(_) => {},
                     Err(e) => failed_files.push(format!("Failed to rename {:?}: {}", f, e)),
