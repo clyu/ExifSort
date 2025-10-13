@@ -1,7 +1,6 @@
 use clap::Parser;
 use walkdir::WalkDir;
-use rexif::parse_buffer;
-use rexif::ExifTag;
+use rexif::{parse_buffer, ExifTag};
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -41,7 +40,40 @@ fn get_date_taken(path: &Path, full_scan: bool) -> Result<String, Box<dyn std::e
             return Ok(entry.value.to_string());
         }
     }
-    Err("Could not find date taken".into())
+    Err("Could not find DateTimeOriginal EXIF tag".into())
+}
+
+fn find_available_path(out_dir: &Path, date_str: &str) -> PathBuf {
+    let base_name = date_str.replace(':', "-").replace(' ', "_");
+    let mut counter = 0;
+    loop {
+        let out_name = if counter == 0 {
+            format!("{}.jpg", base_name)
+        } else {
+            format!("{}_{}.jpg", base_name, counter)
+        };
+        let out_path = out_dir.join(&out_name);
+        if !out_path.exists() {
+            return out_path;
+        }
+        counter += 1;
+    }
+}
+
+fn process_file(
+    path: &Path,
+    out_dir: &Path,
+    full_scan: bool,
+) -> Result<(), String> {
+    let date_str = get_date_taken(path, full_scan)
+        .map_err(|e| format!("Skipping {:?}: Could not get date taken - {}", path, e))?;
+
+    let out_path = find_available_path(out_dir, &date_str);
+
+    fs::rename(path, &out_path)
+        .map_err(|e| format!("Failed to rename {:?}: {}", path, e))?;
+
+    Ok(())
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -59,47 +91,34 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     fs::create_dir_all(&args.out_dir)?;
 
-    let walker = WalkDir::new(&args.in_dir)
-        .into_iter()
-        .filter_map(|e| e.ok())
-        .filter(|entry| entry.file_type().is_file() && entry.path().extension().map_or(false, |ext| {
-            ext.eq_ignore_ascii_case("jpg") || ext.eq_ignore_ascii_case("jpeg")
-        }));
+    let walker = WalkDir::new(&args.in_dir).into_iter().filter_map(|e| e.ok());
 
-    let pb = ProgressBar::new_spinner();
-    pb.set_style(ProgressStyle::default_spinner()
-        .template("{spinner:.green} [{elapsed_precise}] {pos} files processed {msg}")?
+    let jpeg_files: Vec<_> = walker
+        .filter(|entry| {
+            entry.file_type().is_file()
+                && entry.path().extension().map_or(false, |ext| {
+                    ext.eq_ignore_ascii_case("jpg") || ext.eq_ignore_ascii_case("jpeg")
+                })
+        })
+        .collect();
+
+    let pb = ProgressBar::new(jpeg_files.len() as u64);
+    pb.set_style(
+        ProgressStyle::default_bar()
+            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({percent}%) {msg}")?
+            .progress_chars("#>-"),
     );
 
     let mut failed_files: Vec<String> = Vec::new();
 
-    for entry in walker {
-        let f = entry.path();
-        pb.inc(1);
-        let date_str = match get_date_taken(f, args.full_scan) {
-            Ok(d) => d,
-            Err(e) => {
-                failed_files.push(format!("Skipping {:?}: Could not get date taken - {}", f, e));
-                continue;
-            }
-        };
-
-        let base_name = date_str.replace(':', "-").replace(' ', "_");
-        let mut out_name = format!("{}.jpg", base_name);
-        let mut counter = 0;
-
-        loop {
-            let out_path = args.out_dir.join(&out_name);
-            if !out_path.exists() {
-                match fs::rename(f, &out_path) {
-                    Ok(_) => {},
-                    Err(e) => failed_files.push(format!("Failed to rename {:?}: {}", f, e)),
-                }
-                break;
-            }
-            counter += 1;
-            out_name = format!("{}_{}.jpg", base_name, counter);
+    for entry in jpeg_files {
+        let path = entry.path();
+        
+        if let Err(e) = process_file(path, &args.out_dir, args.full_scan) {
+            failed_files.push(e);
         }
+        
+        pb.inc(1);
     }
 
     pb.finish_with_message("Done!");
