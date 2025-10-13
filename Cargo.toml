@@ -8,3 +8,4 @@ clap = { version = "4.0", features = ["derive"] }
 walkdir = "2.3"
 rexif = "0.7.5"
 indicatif = "0.17"
+rayon = "1.11.0"

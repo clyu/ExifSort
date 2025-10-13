@@ -1,9 +1,12 @@
 use clap::Parser;
 use walkdir::WalkDir;
+use rayon::prelude::*;
 use rexif::{parse_buffer, ExifTag};
+use std::collections::HashSet;
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 use indicatif::{ProgressBar, ProgressStyle};
 
 #[derive(Parser, Debug)]
@@ -22,7 +25,7 @@ struct Args {
     full_scan: bool,
 }
 
-fn get_date_taken(path: &Path, full_scan: bool) -> Result<String, Box<dyn std::error::Error>> {
+fn get_date_taken(path: &Path, full_scan: bool) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     let mut file = fs::File::open(path)?;
     let exif = if full_scan {
         let mut buffer = Vec::new();
@@ -41,39 +44,6 @@ fn get_date_taken(path: &Path, full_scan: bool) -> Result<String, Box<dyn std::e
         }
     }
     Err("Could not find DateTimeOriginal EXIF tag".into())
-}
-
-fn find_available_path(out_dir: &Path, date_str: &str) -> PathBuf {
-    let base_name = date_str.replace(':', "-").replace(' ', "_");
-    let mut counter = 0;
-    loop {
-        let out_name = if counter == 0 {
-            format!("{}.jpg", base_name)
-        } else {
-            format!("{}_{}.jpg", base_name, counter)
-        };
-        let out_path = out_dir.join(&out_name);
-        if !out_path.exists() {
-            return out_path;
-        }
-        counter += 1;
-    }
-}
-
-fn process_file(
-    path: &Path,
-    out_dir: &Path,
-    full_scan: bool,
-) -> Result<(), String> {
-    let date_str = get_date_taken(path, full_scan)
-        .map_err(|e| format!("Skipping {:?}: Could not get date taken - {}", path, e))?;
-
-    let out_path = find_available_path(out_dir, &date_str);
-
-    fs::rename(path, &out_path)
-        .map_err(|e| format!("Failed to rename {:?}: {}", path, e))?;
-
-    Ok(())
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -100,6 +70,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     ext.eq_ignore_ascii_case("jpg") || ext.eq_ignore_ascii_case("jpeg")
                 })
         })
+        .map(|entry| entry.into_path())
         .collect();
 
     let pb = ProgressBar::new(jpeg_files.len() as u64);
@@ -109,23 +80,61 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .progress_chars("#>-"),
     );
 
-    let mut failed_files: Vec<String> = Vec::new();
+    let failed_files = Mutex::new(Vec::new());
 
-    for entry in jpeg_files {
-        let path = entry.path();
-        
-        if let Err(e) = process_file(path, &args.out_dir, args.full_scan) {
-            failed_files.push(e);
-        }
-        
-        pb.inc(1);
+    // --- Phase 1: Parallel EXIF Parsing ---
+    let parsed_data: Vec<(PathBuf, String)> = jpeg_files
+        .par_iter()
+        .filter_map(|path| {
+            match get_date_taken(path, args.full_scan) {
+                Ok(date_str) => Some((path.clone(), date_str)),
+                Err(e) => {
+                    let error_msg = format!("Skipping {:?}: Could not get date taken - {}", path, e);
+                    failed_files.lock().unwrap().push(error_msg);
+                    None
+                }
+            }
+        })
+        .collect();
+
+    // --- Phase 2: Sequential Destination Planning ---
+    let mut planned_moves = Vec::new();
+    let mut used_names = HashSet::new();
+    for (source_path, date_str) in parsed_data {
+        let base_name = date_str.replace(':', "-").replace(' ', "_");
+        let mut counter = 0;
+        let dest_path = loop {
+            let out_name = if counter == 0 {
+                format!("{}.jpg", base_name)
+            } else {
+                format!("{}_{}.jpg", base_name, counter)
+            };
+            if used_names.insert(out_name.clone()) {
+                break args.out_dir.join(&out_name);
+            }
+            counter += 1;
+        };
+        planned_moves.push((source_path, dest_path));
     }
+
+    // --- Phase 3: Parallel I/O Execution ---
+    planned_moves
+        .par_iter()
+        .for_each(|(source_path, dest_path)| {
+            if let Err(e) = fs::rename(source_path, dest_path) {
+                let error_msg = format!("Failed to rename {:?}: {}", source_path, e);
+                failed_files.lock().unwrap().push(error_msg);
+            }
+            pb.inc(1);
+        });
+
 
     pb.finish_with_message("Done!");
 
-    if !failed_files.is_empty() {
+    let final_failed_files = failed_files.into_inner().unwrap();
+    if !final_failed_files.is_empty() {
         eprintln!("\n--- Summary of Errors ---");
-        for error in failed_files {
+        for error in final_failed_files {
             eprintln!("{}", error);
         }
     }
