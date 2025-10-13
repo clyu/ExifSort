@@ -7,7 +7,7 @@ use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use indicatif::{ProgressBar, ProgressStyle};
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -73,29 +73,35 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map(|entry| entry.into_path())
         .collect();
 
-    let pb = ProgressBar::new(jpeg_files.len() as u64);
-    pb.set_style(
-        ProgressStyle::default_bar()
-            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({percent}%) {msg}")?
-            .progress_chars("#>-"),
-    );
+    let multi_pb = MultiProgress::new();
+    let style = ProgressStyle::default_bar()
+        .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({percent}%) {msg}")?
+        .progress_chars("#>");
 
     let failed_files = Mutex::new(Vec::new());
 
     // --- Phase 1: Parallel EXIF Parsing ---
+    let pb1 = multi_pb.add(ProgressBar::new(jpeg_files.len() as u64));
+    pb1.set_style(style.clone());
+    pb1.set_message("Parsing files");
+
     let parsed_data: Vec<(PathBuf, String)> = jpeg_files
         .par_iter()
         .filter_map(|path| {
-            match get_date_taken(path, args.full_scan) {
+            let result = match get_date_taken(path, args.full_scan) {
                 Ok(date_str) => Some((path.clone(), date_str)),
                 Err(e) => {
                     let error_msg = format!("Skipping {:?}: Could not get date taken - {}", path, e);
                     failed_files.lock().unwrap().push(error_msg);
                     None
                 }
-            }
+            };
+            pb1.inc(1);
+            result
         })
         .collect();
+
+    pb1.finish_with_message("Parsing complete!");
 
     // --- Phase 2: Sequential Destination Planning ---
     let mut planned_moves = Vec::new();
@@ -118,6 +124,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // --- Phase 3: Parallel I/O Execution ---
+    let pb2 = multi_pb.add(ProgressBar::new(planned_moves.len() as u64));
+    pb2.set_style(style);
+    pb2.set_message("Moving files");
+
     planned_moves
         .par_iter()
         .for_each(|(source_path, dest_path)| {
@@ -125,11 +135,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let error_msg = format!("Failed to rename {:?}: {}", source_path, e);
                 failed_files.lock().unwrap().push(error_msg);
             }
-            pb.inc(1);
+            pb2.inc(1);
         });
 
-
-    pb.finish_with_message("Done!");
+    pb2.finish_with_message("Done!");
 
     let final_failed_files = failed_files.into_inner().unwrap();
     if !final_failed_files.is_empty() {
