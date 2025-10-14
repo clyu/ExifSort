@@ -115,8 +115,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             } else {
                 format!("{}_{}.jpg", base_name, counter)
             };
-            if used_names.insert(out_name.clone()) {
-                break args.out_dir.join(&out_name);
+            let dest_path_candidate = args.out_dir.join(&out_name);
+            if !dest_path_candidate.exists() && used_names.insert(out_name) {
+                break dest_path_candidate;
             }
             counter += 1;
         };
