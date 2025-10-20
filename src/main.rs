@@ -10,14 +10,14 @@ use std::sync::Mutex;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 
 #[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None)]
+#[command(author, version, about, long_about = None, arg_required_else_help = true)]
 struct Args {
     /// Input directory
-    #[arg(short, long)]
+    #[arg(short = 'i', long)]
     in_dir: PathBuf,
 
     /// Output directory
-    #[arg(short, long)]
+    #[arg(short = 'o', long)]
     out_dir: PathBuf,
 
     /// Read the entire file to find EXIF data. Slower but more reliable.
