@@ -1,0 +1,38 @@
+name: build
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'src/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/**'
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            exe_name: ExifSort.exe
+            artifact_name: ExifSort-windows
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            exe_name: ExifSort
+            artifact_name: ExifSort-linux
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Build
+      run: cargo build --release --target ${{ matrix.target }}
+
+    - name: Upload executable
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.artifact_name }}
+        path: target/${{ matrix.target }}/release/${{ matrix.exe_name }}
