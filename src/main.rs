@@ -105,7 +105,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // --- Phase 2: Sequential Destination Planning ---
     let mut planned_moves = Vec::new();
-    let mut used_names = HashSet::new();
+    let mut used_names: HashSet<String> = fs::read_dir(&args.out_dir)?
+        .filter_map(|entry| {
+            entry.ok().and_then(|e| {
+                e.path()
+                    .file_name()
+                    .and_then(|n| n.to_str().map(String::from))
+            })
+        })
+        .collect();
+
     for (source_path, date_str) in parsed_data {
         let base_name = date_str.replace(':', "-").replace(' ', "_");
         let mut counter = 0;
@@ -115,9 +124,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             } else {
                 format!("{}_{}.jpg", base_name, counter)
             };
-            let dest_path_candidate = args.out_dir.join(&out_name);
-            if !dest_path_candidate.exists() && used_names.insert(out_name) {
-                break dest_path_candidate;
+            if used_names.insert(out_name.clone()) {
+                break args.out_dir.join(&out_name);
             }
             counter += 1;
         };
